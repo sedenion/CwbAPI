@@ -477,15 +477,14 @@ static IOleInPlaceSiteVtbl __CwbOleInPlaceSiteVtbl = {
 
 
 
-/** \brief Write to HTML document (DOM)
+/** \brief Write to Web Browser document (DOM)
  *
- * Write the given HTML content into HTML document (DOM)
- * of the specified instance.
+ * Write the given HTML content into Web Browser HTML document (DOM).
  *
- * \param[in]  hWnd    Handle to the window with HTML View instance.
+ * \param[in]  hWnd    Handle to the window with Web Browser instance.
  * \param[in]  lpHtml  HTML content to write.
  *
- * \return Any non zero value mean error.
+ * \return Zero if succeed, non-zero value otherwise.
  */
 long WebBrowserDocumentWrite(HWND hWnd, LPCWSTR lpHtml)
 {
@@ -518,13 +517,13 @@ long WebBrowserDocumentWrite(HWND hWnd, LPCWSTR lpHtml)
 }
 
 
-/** \brief Clear HTML document (DOM)
+/** \brief Close Web Browser document (DOM)
  *
- * Clear the HTML document (DOM) of the specified instance.
+ * Closes (reset) the Web Browser HTML document (DOM).
  *
- * \param[in]  hWnd    Handle to the window with HTML View instance.
+ * \param[in]  hWnd    Handle to the window with Web Browser instance.
  *
- * \return Any non zero value mean error.
+ * \return Zero if succeed, non-zero value otherwise.
  */
 long WebBrowserDocumentClose(HWND hWnd)
 {
@@ -547,7 +546,7 @@ long WebBrowserDocumentClose(HWND hWnd)
  * Orders the specified instance to open the location
  * at given URL.
  *
- * \param[in]  hWnd     Handle to the window with HTML View instance.
+ * \param[in]  hWnd     Handle to the window with Web Browser instance.
  * \param[in]  lpUrl    URL to open.
  *
  * \return Zero if succeed, non-zero value otherwise.
@@ -620,12 +619,11 @@ long WebBrowserResize(HWND hWnd, int w, int h)
 }
 
 
-/** \brief Release HTML View instance
+/** \brief Release Web Browser instance
  *
- * Release a previously attached HTML View instance
- * from the specified window
+ * Releases a previously attached Web Browser instance from a window.
  *
- * \param[in]  hWnd    Handle to the window with HTML View instance.
+ * \param[in]  hWnd    Handle to the window with Web Browser instance.
  *
  * \return Zero if succeed, non-zero value otherwise.
  */
@@ -659,11 +657,11 @@ long WebBrowserRelease(HWND hWnd)
 }
 
 
-/** \brief Attach HTML view to window
+/** \brief Attach Web Browser to window
  *
- * Attach the HTML view to the specified window.
+ * Attaches a new Web Browser instance to an existing window.
  *
- * \param[in]  hWnd         Window handle to attach HTML View instance.
+ * \param[in]  hWnd         Window handle to attach Web Browser instance.
  * \param[in]  pBeforeNav   Optional pointer to callback function called when user click on link.
  *
  * \return Zero if succeed, non-zero value otherwise.
@@ -810,9 +808,16 @@ static LRESULT CALLBACK __CHVWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM
 static const char __CHVClsName[] = "CHTMLVIEW";
 
 
-/** \brief Create HTML View window
+/** \brief Create Web Browser window
  *
- * Creates a new window with an attached HTML View instance.
+ * Creates a new Web Browser window or child control.
+ *
+ * This function first create a new window with the given parameters then
+ * attach a new Web Browser instance to it. The created window uses use its own
+ * Window Procedure to manage its Web Browser instance.
+ *
+ * This function is the best way to embed a Web Browser as window child
+ * control by specifying a parent window handle and WS_CHILD style.
  *
  * \param[in]  dwExStyle    The extended window style of the window being created.
  * \param[in]  dwStyle      The style of the window being created.
@@ -821,8 +826,7 @@ static const char __CHVClsName[] = "CHTMLVIEW";
  * \param[in]  hInstance    A handle to a menu, or specifies a child-window identifier, depending on the window style.
  * \param[in]  pBeforeNav   Optional pointer to callback function called when user click on link.
  *
- * \return Handle to created window with attached HTML HTML View
- *         instance or NULL if operation failed.
+ * \return Handle to created window with Web Browser instance or NULL if error.
  */
 HWND WebBrowserCreate(DWORD dwExStyle, DWORD dwStyle, HWND hWndParent, HMENU hMenu, HINSTANCE hInstance, CwbBeforeNav pBeforeNav)
 {
