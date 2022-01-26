@@ -851,6 +851,9 @@ HWND WebBrowserCreate(DWORD dwExStyle, DWORD dwStyle, HWND hWndParent, HMENU hMe
       DestroyWindow(hWnd);
       return NULL;
     }
+    // automatically show child window
+    if(dwStyle & WS_CHILD)
+      ShowWindow(hWnd, SW_NORMAL);
   }
 
   return hWnd;
