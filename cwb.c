@@ -36,15 +36,21 @@
  *  3. This notice may not be removed or altered from any source distribution.
  */
 #include <windows.h>
-#include <exdisp.h>		  // defines interfaces for IWebBrowser2, IWebBrowserEvent2
-#include <exdispid.h>   // defines DISPID_ values
-#include <mshtml.h>		  // defines interfaces for IHTMLDocument2.
+#include <exdisp.h>     // defines interfaces for IWebBrowser2, IWebBrowserEvent2
+#include <exdispid.h>   // defines EXDIS DISPID_ values
+#include <mshtml.h>     // defines interfaces for IHTMLDocument2.
+#include <mshtmdid.h>   // defines MSHTML DISPID_ values
 
 #define VERSION 1.0
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+/* fix GUID definition fail with MinGW */
+const GUID DECLSPEC_SELECTANY DIID_HTMLDocumentEvents2 = { 0x30510737, 0x98b5, 0x11cf, {0xbb,0x82, 0x00,0xaa,0x00,0xbd,0xce,0x0b}};
+
+/* WindowProc callback function declaration */
+LRESULT CALLBACK __CwbWndProc(HWND, UINT, WPARAM, LPARAM);
 
 /* BeforeNavigate callback function declaration */
 typedef void (*CwbBeforeNav)(LPCWSTR lpUrl, SHORT* pCancel);
@@ -127,6 +133,21 @@ typedef struct _CwbWebBrowserEvents2
 } CwbWebBrowserEvents2;
 
 
+/** \brief Extended IOleClientSite interface
+ *
+ * Custom structure that extend the IOleClientSite interface
+ * to hold a pointer to the custom container structure.
+ */
+typedef struct _CwbHTMLDocumentEvents2
+{
+  /* IOleClientSite interface */
+	HTMLDocumentEvents2 st;
+	/* Pointer to HTML View custom container */
+	CwbContainer*       pContainer;
+
+} CwbHTMLDocumentEvents2;
+
+
 /** \brief Custom container structure definition
  *
  * Custom structure to hold all needed interfaces pointers and
@@ -145,6 +166,8 @@ typedef struct _CwbContainer
   CwbOleInPlaceFrame    OleInPlaceFrame;
   /* Extended DWebBrowserEvents2 interface structure */
   CwbWebBrowserEvents2  WebBrowserEvents2;
+  /* Extended DWebBrowserEvents2 interface structure */
+  CwbHTMLDocumentEvents2 HTMLDocumentEvents2;
 
   /* Web Browser IOleObject interface pointer */
   IOleObject*           pOleObject;
@@ -152,8 +175,6 @@ typedef struct _CwbContainer
   IWebBrowser2*         pWebBrowser2;
   /* Web Browser IHTMLDocument2 interface pointer */
   IHTMLDocument2*       pHTMLDocument2;
-  /* Web Browser IHTMLWindow2 interface pointer */
-  IHTMLWindow2*         pHTMLWindow2;
 
   /* BeforeNavigate callback function pointer */
   CwbBeforeNav          BeforeNav;
@@ -208,6 +229,127 @@ static IStorageVtbl __CwbStorageVtbl = {
   __CwbStorage_Stat
 };
 
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+ *
+ * HTMLDocumentEvents2 interface custom implementation
+ *
+ * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
+HRESULT STDMETHODCALLTYPE __CwbHTMLDocumentEvents2_QueryInterface(HTMLDocumentEvents2* This, REFIID riid, void** ppvObject)
+{
+  CwbContainer* pContainer = ((CwbOleClientSite*)This)->pContainer;
+
+	if( !memcmp(riid, &IID_IUnknown, sizeof(GUID)) ||
+      !memcmp(riid, &IID_IDispatch, sizeof(GUID)) ||
+      !memcmp(riid, &DIID_HTMLDocumentEvents2, sizeof(GUID))) {
+
+		(*ppvObject) = (void**)&pContainer->HTMLDocumentEvents2;
+
+		return S_OK;
+	}
+
+  (*ppvObject) = 0;
+
+  return E_NOINTERFACE;
+}
+ULONG STDMETHODCALLTYPE __CwbHTMLDocumentEvents2_AddRef(HTMLDocumentEvents2* This) {return 1;}
+ULONG STDMETHODCALLTYPE __CwbHTMLDocumentEvents2_Release(HTMLDocumentEvents2* This) {return 1;}
+HRESULT STDMETHODCALLTYPE __CwbHTMLDocumentEvents2_GetTypeInfoCount(HTMLDocumentEvents2* This,UINT *pctinfo) {return E_NOTIMPL;}
+HRESULT STDMETHODCALLTYPE __CwbHTMLDocumentEvents2_GetTypeInfo(HTMLDocumentEvents2* This, UINT iTInfo, LCID lcid,ITypeInfo **ppTInfo) {return E_NOTIMPL;}
+HRESULT STDMETHODCALLTYPE __CwbHTMLDocumentEvents2_GetIDsOfNames(HTMLDocumentEvents2* This,REFIID riid,LPOLESTR *rgszNames,UINT cNames,LCID lcid,DISPID *rgDispId) {return E_NOTIMPL;}
+HRESULT STDMETHODCALLTYPE __CwbHTMLDocumentEvents2_Invoke(HTMLDocumentEvents2* This,DISPID dispIdMember,REFIID riid,LCID lcid,WORD wFlags,DISPPARAMS *pDispParams,VARIANT *pVarResult,EXCEPINFO *pExcepInfo,UINT *puArgErr)
+{
+  CwbContainer* pContainer = ((CwbOleClientSite*)This)->pContainer;
+
+  IDispatch* pDispatch;
+  IHTMLEventObj* pIHTMLEventObj;
+  LONG x, y, b;
+
+  UINT Msg;
+  WPARAM wParam;
+  LPARAM lParam;
+
+  if(pDispParams->rgvarg[0].vt == VT_DISPATCH) {
+
+    pDispatch = pDispParams->rgvarg[0].pdispVal;
+    if(S_OK != pDispatch->lpVtbl->QueryInterface(pDispatch, &IID_IHTMLEventObj, (void**)&pIHTMLEventObj)) {
+      return DISP_E_MEMBERNOTFOUND;
+    }
+
+    Msg = 0;
+    pIHTMLEventObj->lpVtbl->get_x(pIHTMLEventObj, &x);
+    pIHTMLEventObj->lpVtbl->get_y(pIHTMLEventObj, &y);
+    pIHTMLEventObj->lpVtbl->get_button(pIHTMLEventObj, &b);
+  }
+
+  switch(dispIdMember)
+  {
+  case DISPID_EVMETH_ONMOUSEMOVE:
+    Msg = WM_MOUSEMOVE; lParam = MAKELPARAM(x,y);
+    break;
+
+  case DISPID_EVMETH_ONMOUSEDOWN:
+    switch(b) {
+    case 1: Msg = WM_LBUTTONDOWN; break;
+    case 2: Msg = WM_RBUTTONDOWN; break;
+    case 4: Msg = WM_MBUTTONDOWN; break;
+    }
+    lParam = MAKELPARAM(x,y);
+    break;
+
+  case DISPID_EVMETH_ONMOUSEUP:
+    switch(b) {
+    case 1: Msg = WM_LBUTTONUP; break;
+    case 2: Msg = WM_RBUTTONUP; break;
+    case 4: Msg = WM_MBUTTONUP; break;
+    }
+    lParam = MAKELPARAM(x,y);
+    break;
+/*
+  case DISPID_EVMETH_ONCLICK:
+    break;
+
+  case DISPID_EVMETH_ONKEYDOWN:
+    break;
+
+  case DISPID_EVMETH_ONKEYUP:
+    break;
+
+  case DISPID_EVMETH_ONKEYPRESS:
+    break;
+
+  case DISPID_ONMOUSEWHEEL:
+    break;
+
+  case DISPID_ONFOCUSIN:
+    break;
+
+  case DISPID_ONFOCUSOUT:
+    break;
+
+  case DISPID_ONCONTEXTMENU:
+    break;
+  */
+  }
+
+  if(Msg) {
+    // send message to parent window
+    SendMessage(GetParent(pContainer->hWnd), Msg, wParam, lParam);
+    return S_OK;
+  } else {
+    return DISP_E_MEMBERNOTFOUND;
+  }
+}
+
+/* Custom vtable for HTMLDocumentEvents2 interface */
+static HTMLDocumentEvents2Vtbl __CwbHTMLDocumentEvents2Vtbl = {
+  __CwbHTMLDocumentEvents2_QueryInterface,
+  __CwbHTMLDocumentEvents2_AddRef,
+  __CwbHTMLDocumentEvents2_Release,
+  __CwbHTMLDocumentEvents2_GetTypeInfoCount,
+  __CwbHTMLDocumentEvents2_GetTypeInfo,
+  __CwbHTMLDocumentEvents2_GetIDsOfNames,
+  __CwbHTMLDocumentEvents2_Invoke
+};
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
  *
@@ -686,6 +828,8 @@ long WebBrowserAttach(HWND hWnd, CwbBeforeNav pBeforeNav)
   pContainer->OleInPlaceFrame.pContainer = pContainer;
   pContainer->WebBrowserEvents2.st.lpVtbl = &__CwbWebBrowserEvents2Vtbl;
   pContainer->WebBrowserEvents2.pContainer = pContainer;
+  pContainer->HTMLDocumentEvents2.st.lpVtbl = &__CwbHTMLDocumentEvents2Vtbl;
+  pContainer->HTMLDocumentEvents2.pContainer = pContainer;
   pContainer->pOleObject = NULL;
   pContainer->pWebBrowser2 = NULL;
   pContainer->pHTMLDocument2 = NULL;
@@ -698,7 +842,7 @@ long WebBrowserAttach(HWND hWnd, CwbBeforeNav pBeforeNav)
   // create new WebBrowser OleObject
   IOleClientSite* pOleClientSite = (IOleClientSite*)&pContainer->OleClientSite;
   IOleObject* pOleObject = NULL;
-	if(S_OK != OleCreate(&CLSID_WebBrowser, &IID_IOleObject, OLERENDER_DRAW, 0, pOleClientSite, pStorage, (void**)&pOleObject)) {
+	if(S_OK != OleCreate(&CLSID_WebBrowser, &IID_IOleObject, OLERENDER_DRAW, NULL, pOleClientSite, pStorage, (void**)&pOleObject)) {
     WebBrowserRelease(hWnd); return -3;
 	}
 	pContainer->pOleObject = pOleObject; //< store pointer into custom container struct
@@ -712,16 +856,14 @@ long WebBrowserAttach(HWND hWnd, CwbBeforeNav pBeforeNav)
 
   /*
   // this has no purpose here...
-  pOleObject->lpVtbl->SetHostNames(pOleObject, L"CHtmlView", 0);
+  pOleObject->lpVtbl->SetHostNames(pOleObject, L"CWBAPI", 0);
   */
 
-  /*
   // this seem useless...
   if(OleSetContainedObject((IUnknown*)pOleObject, TRUE)) {
     WebBrowserRelease(hWnd);
     return -3;
   }
-  */
 
   // Retrieve the IWebBrowser2 object embedded in OleObject
   IWebBrowser2* pWebBrowser2 = NULL;
@@ -731,33 +873,15 @@ long WebBrowserAttach(HWND hWnd, CwbBeforeNav pBeforeNav)
   pContainer->pWebBrowser2 = pWebBrowser2; //< store pointer into custom container struct
 
 
-
-  // get OleObject connection container object to find connection point to DWebBrowserEvent2
-  IConnectionPointContainer* pConnectionPointContainer = NULL;
-  if(S_OK != pOleObject->lpVtbl->QueryInterface(pOleObject, &IID_IConnectionPointContainer, (void**)&pConnectionPointContainer)) {
-    WebBrowserRelease(hWnd); return -5;
-  }
-  // get connection point to DWebBrowserEvent2
-  IConnectionPoint* pConnectionPoint = NULL;
-  if(S_OK != pConnectionPointContainer->lpVtbl->FindConnectionPoint(pConnectionPointContainer, &DIID_DWebBrowserEvents2, &pConnectionPoint)) {
-    WebBrowserRelease(hWnd); return -5;
-  }
-  // set connection (Sink) from Web Browser OleObject and DWebBrowserEvents2 interface
-  DWebBrowserEvents2* pWebBrowserEvents2 = (DWebBrowserEvents2*)&pContainer->WebBrowserEvents2;
-  DWORD dwCookie;
-  if(S_OK != pConnectionPoint->lpVtbl->Advise(pConnectionPoint, (IUnknown*)pWebBrowserEvents2, &dwCookie)) {
-    WebBrowserRelease(hWnd); return -5;
-  }
-
   // opens the 'about:blank' page to force Web Browser to create a "safe" HTML document (DOM)
   if(S_OK != WebBrowserNavigate(hWnd, L"about:blank")) {
-    WebBrowserRelease(hWnd); return -6;
+    WebBrowserRelease(hWnd); return -5;
   }
 
   // get the HTML document (DOM) from Web Browser
   IDispatch *pDispatch = NULL;
   if(S_OK != pWebBrowser2->lpVtbl->get_Document(pWebBrowser2, &pDispatch)) {
-    WebBrowserRelease(hWnd); return -7;
+    WebBrowserRelease(hWnd); return -6;
   }
 
   Sleep(0);
@@ -770,42 +894,51 @@ long WebBrowserAttach(HWND hWnd, CwbBeforeNav pBeforeNav)
   }
   pContainer->pHTMLDocument2 = pHTMLDocument2; //< store pointer into custom container struct
 
-  // get the HTML window from HTML document (DOM) - Not used yet
-  IHTMLWindow2* pHTMLWindow2 = NULL;
-  pHTMLDocument2->lpVtbl->get_parentWindow(pHTMLDocument2, &pHTMLWindow2);
-  if(!pHTMLWindow2) {
+  // Add "Sink" connections to forward Web Browsers events to implemented callbacks
+  IConnectionPointContainer* pConnectionPointContainer;
+  IConnectionPoint* pConnectionPoint;
+  DWORD dwCookie;
+
+  // get OleObject connection container object to find connection point to DWebBrowserEvent2
+  pConnectionPointContainer = NULL;
+  if(S_OK != pOleObject->lpVtbl->QueryInterface(pOleObject, &IID_IConnectionPointContainer, (void**)&pConnectionPointContainer)) {
     WebBrowserRelease(hWnd); return -8;
   }
-  pContainer->pHTMLWindow2 = pHTMLWindow2; //< store pointer into custom container struct
+  // get connection point to DWebBrowserEvent2
+  pConnectionPoint = NULL;
+  if(S_OK != pConnectionPointContainer->lpVtbl->FindConnectionPoint(pConnectionPointContainer, &DIID_DWebBrowserEvents2, &pConnectionPoint)) {
+    WebBrowserRelease(hWnd); return -8;
+  }
+  // set connection (Sink) from Web Browser OleObject and DWebBrowserEvents2 interface
+  DWebBrowserEvents2* pWebBrowserEvents2 = (DWebBrowserEvents2*)&pContainer->WebBrowserEvents2;
+  if(S_OK != pConnectionPoint->lpVtbl->Advise(pConnectionPoint, (IUnknown*)pWebBrowserEvents2, &dwCookie)) {
+    WebBrowserRelease(hWnd); return -8;
+  }
+
+  // get HTMLDocument2 connection container object to find connection point to HTMLDocumentEvents2
+  pConnectionPointContainer = NULL;
+  if(S_OK != pHTMLDocument2->lpVtbl->QueryInterface(pHTMLDocument2, &IID_IConnectionPointContainer, (void**)&pConnectionPointContainer)) {
+    WebBrowserRelease(hWnd); return -8;
+  }
+  // get connection point to HTMLDocumentEvents2
+  pConnectionPoint = NULL;
+  if(S_OK != pConnectionPointContainer->lpVtbl->FindConnectionPoint(pConnectionPointContainer, &DIID_HTMLDocumentEvents2, &pConnectionPoint)) {
+    WebBrowserRelease(hWnd); return -8;
+  }
+  // set connection (Sink) from HTMLDocument2 and HTMLDocumentEvents2 interface
+  HTMLDocumentEvents2* pHTMLDocumentEvents2 = (HTMLDocumentEvents2*)&pContainer->HTMLDocumentEvents2;
+  if(S_OK != pConnectionPoint->lpVtbl->Advise(pConnectionPoint, (IUnknown*)pHTMLDocumentEvents2, &dwCookie)) {
+    WebBrowserRelease(hWnd); return -8;
+  }
 
   return 0;
 }
 
 
 /*
- * Window Proc function for internally created and managed windows.
- */
-static LRESULT CALLBACK __CHVWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
-{
-  switch(uMsg)
-  {
-  case WM_SIZE:
-    WebBrowserResize(hWnd, LOWORD(lParam), HIWORD(lParam));
-    return 0;
-
-  case WM_DESTROY:
-    WebBrowserRelease(hWnd);
-    return 0;
-	}
-
-	return DefWindowProc(hWnd, uMsg, wParam, lParam);
-}
-
-
-/*
  * Window class name for internally created and manager windows.
  */
-static const char __CHVClsName[] = "CHTMLVIEW";
+static const char __CwbClsName[] = "CWBAPI_WINDOW";
 
 
 /** \brief Create Web Browser window
@@ -835,12 +968,12 @@ HWND WebBrowserCreate(DWORD dwExStyle, DWORD dwStyle, HWND hWndParent, HMENU hMe
   ZeroMemory(&wc, sizeof(WNDCLASSEX));
   wc.cbSize = sizeof(WNDCLASSEX);
   wc.hInstance = 0;
-  wc.lpfnWndProc = __CHVWndProc;
-  wc.lpszClassName = &__CHVClsName[0];
+  wc.lpfnWndProc = __CwbWndProc;
+  wc.lpszClassName = &__CwbClsName[0];
   RegisterClassEx(&wc);
 
   // create the new window
-  HWND hWnd = CreateWindowEx(dwExStyle, &__CHVClsName[0], NULL, dwStyle,
+  HWND hWnd = CreateWindowEx(dwExStyle, &__CwbClsName[0], NULL, dwStyle,
                               CW_USEDEFAULT, CW_USEDEFAULT,
                               CW_USEDEFAULT, CW_USEDEFAULT,
                               hWndParent, hMenu, hInstance, NULL);
@@ -857,6 +990,26 @@ HWND WebBrowserCreate(DWORD dwExStyle, DWORD dwStyle, HWND hWndParent, HMENU hMe
   }
 
   return hWnd;
+}
+
+
+/*
+ * Window Proc function for internally created and managed windows.
+ */
+LRESULT CALLBACK __CwbWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+{
+  switch(uMsg)
+  {
+  case WM_SIZE:
+    WebBrowserResize(hWnd, LOWORD(lParam), HIWORD(lParam));
+    return 1;
+
+  case WM_DESTROY:
+    WebBrowserRelease(hWnd);
+    return 0;
+	}
+
+	return DefWindowProc(hWnd, uMsg, wParam, lParam);
 }
 
 #ifdef __cplusplus
